@@ -155,7 +155,10 @@ module Anemone
       page_queue = Queue.new
 
       @opts[:threads].times do
-        @tentacles << Thread.new { Tentacle.new(link_queue, page_queue, @opts).run }
+        @tentacles << Thread.new do
+          Thread.current[:name] = :anenome
+          Tentacle.new(link_queue, page_queue, @opts).run
+        end
       end
 
       @urls.each{ |url| link_queue.enq(url) }
@@ -167,13 +170,22 @@ module Anemone
         do_page_blocks page
         page.discard_doc! if @opts[:discard_page_bodies]
 
+
         links = links_to_follow page
         links.each do |link|
           link_queue << [link, page.url.dup, page.depth + 1]
         end
         @pages.touch_keys links
 
-        @pages[page.url] = page
+        # Eliminate memory bloat / leak
+        if @opts[:discard_page_bodies]
+          @pages[page.url] = true
+          page = nil
+          GC.start
+          sleep 0.1
+        else
+          @pages[page.url] = page
+        end
 
         # if we are done with the crawl, tell the threads to end
         if link_queue.empty? and page_queue.empty?
